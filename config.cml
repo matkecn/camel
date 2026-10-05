@@ -1,0 +1,15 @@
+server > [
+    host = "127.0.0.1"
+]
+
+globals > [
+    global_var = true,
+    global_var2 = 12
+]
+
+meta > [
+    author = "matija",
+    version = 1.0
+]
+
+# this will be comment
