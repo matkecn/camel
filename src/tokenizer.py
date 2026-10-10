@@ -37,12 +37,15 @@ class CmlTokenize():
                 configs[var.strip()] = CmlTokenType.VAR
                 configs[equ.strip()] = CmlTokenType.EQU
                 if val.strip().startswith("\"") and val.strip().endswith(("\"", ",")):
-                    val = val.lstrip("\"").rstrip("\"")
+                    val = val.lstrip("\"").rstrip("\"").rstrip("\",")
                     configs[val.strip()] = CmlTokenType.STRING
                 if val.isdigit() or val.isdecimal():
                     configs[str(val)] = CmlTokenType.NUMBER
                 if val.lower() == "true" or val == "false":
                     configs[str(val)] = CmlTokenType.BOOL
+                continue
             if self.token[i].strip().startswith("]"):
                 configs[self.token[i].strip()] = CmlTokenType.R_BRACKET
+                continue
+        return configs
             
