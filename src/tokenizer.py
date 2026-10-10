@@ -43,4 +43,6 @@ class CmlTokenize():
                     configs[str(val)] = CmlTokenType.NUMBER
                 if val.lower() == "true" or val == "false":
                     configs[str(val)] = CmlTokenType.BOOL
+            if self.token[i].strip().startswith("]"):
+                configs[self.token[i].strip()] = CmlTokenType.R_BRACKET
             
