@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.svg" alt="CamelConfig logo" width="720" />
+  <img src="assets/logo.svg" alt="CamelConfig logo" width="560" />
 </p>
 
 <h1 align="center">CamelConfig</h1>
