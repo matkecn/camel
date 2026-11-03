@@ -1,0 +1,32 @@
+@init <SHOWCASE>
+
+@required var1 | var2;
+
+@single var1 = "this_is_single_var" # this single var does not have parent
+
+
+@parent Preson {
+    @const @child name = "matija";
+    @child age = 18;
+    @child height = 187.0;
+    @child var = null # some vars in parent does not need to be typed with @child
+};
+
+@deprecated # something like in pythomn 
+@scope Something {
+    var1 = "matija";
+    var2: %int = 18;
+    var3: %list = ('somevar', 10);
+    var4: %object = {
+        some_var: %int = 10;
+    };
+    @optional var5;
+};
+
+@alias Preson P; # Preason is also called P
+
+@rule Person {
+    $name: %string;
+    $age: %int;
+    $height: %float;
+};

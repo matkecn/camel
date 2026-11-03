@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="200" viewBox="0 0 720 200" role="img" aria-labelledby="title desc">
+  <title id="title">CamelConfig logo</title>
+  <desc id="desc">A stylized camel icon beside the CamelConfig wordmark.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="720" y2="200" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0F172A"/>
+      <stop offset="1" stop-color="#111827"/>
+    </linearGradient>
+    <linearGradient id="sand" x1="32" y1="20" x2="192" y2="180" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FBBF24"/>
+      <stop offset="0.55" stop-color="#F59E0B"/>
+      <stop offset="1" stop-color="#B45309"/>
+    </linearGradient>
+    <linearGradient id="text" x1="225" y1="70" x2="510" y2="120" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F8FAFC"/>
+      <stop offset="1" stop-color="#CBD5E1"/>
+    </linearGradient>
+  </defs>
+  <rect width="720" height="200" rx="32" fill="url(#bg)"/>
+  <circle cx="652" cy="28" r="96" fill="#F59E0B" opacity="0.06"/>
+  <circle cx="88" cy="182" r="70" fill="#F59E0B" opacity="0.05"/>
+  <rect x="32" y="20" width="160" height="160" rx="38" fill="url(#sand)"/>
+  <g fill="#0B1220">
+    <ellipse cx="82" cy="101" rx="41" ry="27"/>
+    <circle cx="67" cy="78" r="21"/>
+    <circle cx="98" cy="75" r="23"/>
+    <path d="M112 94c12-23 9-46-4-60l18-8c17 19 15 52 1 78z"/>
+    <ellipse cx="121" cy="33" rx="21" ry="14" transform="rotate(18 121 33)"/>
+    <path d="M109 20 113 7l8 11z"/>
+    <rect x="57" y="111" width="10" height="36" rx="5"/>
+    <rect x="76" y="111" width="10" height="36" rx="5"/>
+    <rect x="96" y="111" width="10" height="36" rx="5"/>
+    <rect x="113" y="111" width="10" height="36" rx="5"/>
+  </g>
+  <path d="M42 96c-12 0-14 13-8 21" fill="none" stroke="#0B1220" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="127" cy="30" r="2.6" fill="#B45309"/>
+  <text x="225" y="98" fill="url(#text)" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="55" font-weight="700" letter-spacing="-1.5">CamelConfig</text>
+  <text x="228" y="136" fill="#94A3B8" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="19" letter-spacing="0.2">CML · configuration language for Python</text>
+  <g transform="translate(600 142)">
+    <rect width="88" height="30" rx="15" fill="#F59E0B" opacity="0.12" stroke="#F59E0B" stroke-opacity="0.35"/>
+    <text x="44" y="20" text-anchor="middle" fill="#FBBF24" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" font-weight="600">v1.0.0</text>
+  </g>
+</svg>

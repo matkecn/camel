@@ -1,0 +1,40 @@
+{
+  "name": "cml-language",
+  "displayName": "CamelConfig (Cml)",
+  "description": "Syntax highlighting and editor support for CamelConfig files.",
+  "version": "1.0.0",
+  "publisher": "camel",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "cml",
+    "camelconfig",
+    "configuration"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "cml",
+        "aliases": [
+          "CamelConfig",
+          "Cml"
+        ],
+        "extensions": [
+          ".cml"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "cml",
+        "scopeName": "source.cml",
+        "path": "./syntaxes/cml.tmLanguage.json"
+      }
+    ]
+  }
+}
