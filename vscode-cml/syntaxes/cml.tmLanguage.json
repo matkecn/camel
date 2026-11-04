@@ -54,7 +54,7 @@
       }
     },
     "keywords": {
-      "match": "@(?:init|required|require|single|parent|scope|alias|rule|const|child|optional|deprecated|experimental|internal|private|public|readonly|frozen|mutable)\\b",
+      "match": "@(?:init|include|required|require|single|parent|scope|alias|rule|use|const|child|optional|deprecated|experimental|internal|private|public|readonly|frozen|mutable)\\b",
       "name": "keyword.control.cml"
     },
     "constants": {

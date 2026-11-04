@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import shutil
+import tempfile
+from pathlib import Path
 from typing import Any
 
 from .nodes import Block, CmlDocument, CmlReference, Entry, Rule
@@ -92,6 +96,8 @@ def _format_block(block: Block, keyword: str, unit: str) -> str:
     for decorator in block.decorators:
         lines.append(f"@{decorator}")
     lines.append(f"@{keyword} {block.name} {{")
+    for rule_name in block.uses:
+        lines.append(f"{unit}@use {rule_name};")
     for entry in block.entries.values():
         lines.append(_format_entry(entry, 1, unit))
     lines.append("};")
@@ -117,6 +123,13 @@ def dumps(document: CmlDocument, *, indent: int | str = 4) -> str:
     chunks: list[str] = []
     if document.decorators:
         chunks.append("\n".join(f"@{decorator}" for decorator in document.decorators))
+    if document.includes:
+        chunks.append(
+            "\n".join(
+                f"@include {json.dumps(include.path, ensure_ascii=False)};"
+                for include in document.includes
+            )
+        )
     if document.init is not None:
         chunks.append(f"@init <{document.init}>")
     if document.required:
@@ -134,9 +147,40 @@ def dumps(document: CmlDocument, *, indent: int | str = 4) -> str:
     return "\n\n".join(chunks) + ("\n" if chunks else "")
 
 
-def dump(document: CmlDocument, path: str, *, indent: int | str = 4, encoding: str = "utf-8") -> None:
-    with open(path, "w", encoding=encoding, newline="\n") as handle:
-        handle.write(dumps(document, indent=indent))
+def dump(
+    document: CmlDocument,
+    path: str,
+    *,
+    indent: int | str = 4,
+    encoding: str = "utf-8",
+    atomic: bool = True,
+    backup: bool = False,
+) -> None:
+    text = dumps(document, indent=indent)
+    target = Path(path)
+    if not atomic:
+        with open(target, "w", encoding=encoding, newline="\n") as handle:
+            handle.write(text)
+        return
+    fd, temp_name = tempfile.mkstemp(
+        prefix=f".{target.name}.",
+        suffix=".tmp",
+        dir=str(target.parent),
+    )
+    try:
+        with os.fdopen(fd, "w", encoding=encoding, newline="\n") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if backup and target.exists():
+            shutil.copy2(target, target.with_name(f"{target.name}.bak"))
+        os.replace(temp_name, target)
+    except Exception:
+        try:
+            os.unlink(temp_name)
+        except FileNotFoundError:
+            pass
+        raise
 
 
 write = dump

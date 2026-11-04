@@ -45,3 +45,11 @@ class CmlValidationError(CmlError):
 
 class CmlPathError(CmlError):
     pass
+
+
+class CmlIncludeError(CmlError):
+    pass
+
+
+class CmlReferenceError(CmlError):
+    pass

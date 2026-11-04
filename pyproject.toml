@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "camelconfig"
-version = "1.0.0"
+version = "1.1.0"
 description = "CamelConfig (Cml) parser, writer, validator and toolkit for Python."
 readme = "README.md"
 license = { text = "MIT" }
@@ -26,6 +26,9 @@ classifiers = [
   "Topic :: Text Processing :: Markup"
 ]
 
+[project.optional-dependencies]
+dev = ["ruff>=0.6"]
+
 [project.urls]
 Homepage = "https://github.com/matkecn/camel"
 Repository = "https://github.com/matkecn/camel"
@@ -40,3 +43,7 @@ packages = ["camel"]
 
 [tool.setuptools.package-data]
 camel = ["py.typed"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120

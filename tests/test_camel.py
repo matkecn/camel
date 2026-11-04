@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import tempfile
 import unittest
 from pathlib import Path
 
 import camel
+from camel.__main__ import main as cli_main
 
 SHOWCASE = Path(__file__).resolve().parents[1] / "SHOWCASE.cml"
 
@@ -216,6 +219,252 @@ class AdvancedApiTests(unittest.TestCase):
             self.assertEqual(document.get_path("P.y"), 2)
             camel.merge(str(path), {"parents": {"P": {"z": 3}}})
             self.assertEqual(camel.get(str(path), "P.z"), 3)
+
+
+class IncludeTests(unittest.TestCase):
+    def test_load_includes_and_override(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            defaults = root / "defaults.cml"
+            defaults.write_text(
+                '@init <Defaults>\n@single host = "localhost";\n'
+                "@parent server {\n    port = 80;\n};\n",
+                encoding="utf-8",
+            )
+            app = root / "app.cml"
+            app.write_text(
+                '@include "defaults.cml";\n@init <App>\n'
+                '@single host = "example.com";\n'
+                "@parent server {\n    port = 8080;\n};\n",
+                encoding="utf-8",
+            )
+            document = camel.load(app)
+            self.assertEqual(document.init, "App")
+            self.assertEqual(document.singles["host"].value, "example.com")
+            self.assertEqual(document.parents["server"]["port"], 8080)
+            self.assertEqual(document.includes, [])
+
+    def test_load_preserves_includes_when_not_resolved(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "defaults.cml").write_text("@single a = 1;\n", encoding="utf-8")
+            app = root / "app.cml"
+            app.write_text('@include "defaults.cml";\n@single b = 2;\n', encoding="utf-8")
+            document = camel.load(app, resolve_includes=False)
+            self.assertEqual([include.path for include in document.includes], ["defaults.cml"])
+            self.assertIn('@include "defaults.cml";', camel.dumps(document))
+
+    def test_include_cycle(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = root / "first.cml"
+            second = root / "second.cml"
+            first.write_text('@include "second.cml";\n', encoding="utf-8")
+            second.write_text('@include "first.cml";\n', encoding="utf-8")
+            with self.assertRaises(camel.CmlIncludeError):
+                camel.load(first)
+
+    def test_missing_include(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "app.cml"
+            path.write_text('@include "missing.cml";\n', encoding="utf-8")
+            with self.assertRaises(camel.CmlIncludeError):
+                camel.load(path)
+
+    def test_loads_requires_base_dir_for_includes(self) -> None:
+        with self.assertRaises(camel.CmlIncludeError):
+            camel.loads('@include "defaults.cml";\n', resolve_includes=True)
+
+
+class ResolverTests(unittest.TestCase):
+    def test_env_and_ref(self) -> None:
+        document = camel.loads(
+            '@single host = $env("HOST", "localhost");\n'
+            '@single port = $env("PORT", 8080);\n'
+            '@single url = $ref("host");\n'
+        )
+        resolved = camel.resolve_refs(document, env={"PORT": "9090"})
+        self.assertEqual(resolved.singles["host"].value, "localhost")
+        self.assertEqual(resolved.singles["port"].value, 9090)
+        self.assertEqual(resolved.singles["url"].value, "localhost")
+        self.assertIsInstance(document.singles["host"].value, camel.CmlReference)
+
+    def test_missing_env_strict(self) -> None:
+        document = camel.loads('@single value = $env("MISSING");\n')
+        with self.assertRaises(camel.CmlReferenceError):
+            camel.resolve_refs(document, env={})
+
+    def test_ref_cycle(self) -> None:
+        document = camel.loads(
+            '@single a = $ref("b");\n@single b = $ref("a");\n'
+        )
+        with self.assertRaises(camel.CmlReferenceError):
+            camel.resolve_refs(document)
+
+    def test_load_resolve_refs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "config.cml"
+            path.write_text('@single value = $env("VALUE");\n', encoding="utf-8")
+            document = camel.load(path, resolve_refs=True, env={"VALUE": "ready"})
+            self.assertEqual(document.singles["value"].value, "ready")
+
+    def test_resolve_refs_does_not_mutate_nested_original(self) -> None:
+        document = camel.loads(
+            '@single config: %object = { value = $env("VALUE"); };\n'
+        )
+        resolved = camel.resolve_refs(document, env={"VALUE": "ready"})
+        self.assertEqual(resolved.singles["config"].value["value"], "ready")
+        self.assertIsInstance(
+            document.singles["config"].value["value"],
+            camel.CmlReference,
+        )
+
+
+class RuleUseTests(unittest.TestCase):
+    def test_use_rule_and_fill_defaults(self) -> None:
+        document = camel.loads(
+            "@rule Person {\n"
+            "    $name: %string;\n"
+            "    $age: %int = 18;\n"
+            "    @optional $nick: %string;\n"
+            "};\n"
+            "@parent P {\n"
+            "    @use Person;\n"
+            '    @child name = "Ada";\n'
+            "};\n"
+        )
+        report = camel.sanitize(document, fill_defaults=True, strict=False)
+        self.assertTrue(report.ok, str(report))
+        self.assertEqual(document.parents["P"]["age"], 18)
+        formatted = camel.dumps(document)
+        self.assertIn("@use Person;", formatted)
+        self.assertEqual(camel.loads(formatted).parents["P"].uses, ["Person"])
+
+    def test_use_rule_missing_required(self) -> None:
+        document = camel.loads(
+            "@rule Person {\n    $name: %string;\n};\n"
+            "@parent P {\n    @use Person;\n};\n"
+        )
+        report = camel.sanitize(document, strict=False)
+        self.assertFalse(report.ok)
+        self.assertTrue(any(issue.path == "parent.P.name" for issue in report.errors))
+
+    def test_unknown_use(self) -> None:
+        document = camel.loads("@parent P {\n    @use Missing;\n};\n")
+        report = camel.sanitize(document, strict=False)
+        self.assertFalse(report.ok)
+        self.assertTrue(any(issue.path == "parent.P.use.Missing" for issue in report.errors))
+
+
+class AtomicSaveTests(unittest.TestCase):
+    def test_backup(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "config.cml"
+            path.write_text("@single value = 1;\n", encoding="utf-8")
+            document = camel.load(path)
+            document.set("single.value", 2)
+            camel.dump(document, path, backup=True)
+            self.assertEqual(path.read_text(encoding="utf-8"), "@single value = 2;\n")
+            backup = path.with_name("config.cml.bak")
+            self.assertEqual(backup.read_text(encoding="utf-8"), "@single value = 1;\n")
+
+    def test_non_atomic(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "config.cml"
+            camel.dump(camel.from_dict({"value": 1}), path, atomic=False)
+            self.assertEqual(camel.load(path).singles["value"].value, 1)
+
+
+class TypedAccessTests(unittest.TestCase):
+    def test_typed_getters_and_ensure(self) -> None:
+        document = camel.from_dict(
+            {
+                "single": {
+                    "count": 3,
+                    "ratio": 1.5,
+                    "enabled": True,
+                    "name": "demo",
+                    "items": [1, 2],
+                    "meta": {"a": 1},
+                }
+            }
+        )
+        self.assertEqual(document.get_int("count"), 3)
+        self.assertEqual(document.get_float("ratio"), 1.5)
+        self.assertTrue(document.get_bool("enabled"))
+        self.assertEqual(document.get_str("name"), "demo")
+        self.assertEqual(document.get_list("items"), [1, 2])
+        self.assertEqual(document.get_dict("meta"), {"a": 1})
+        self.assertEqual(document.get_int("missing", 7), 7)
+        self.assertEqual(document.ensure("count", 9), 3)
+        self.assertEqual(document.ensure("new", 5, "int"), 5)
+        with self.assertRaises(camel.CmlPathError):
+            document.require("missing")
+        with self.assertRaises(camel.CmlPathError):
+            document.get_int("missing")
+        with self.assertRaises(camel.CmlTypeError):
+            document.get_int("name")
+
+
+class DiffTests(unittest.TestCase):
+    def test_diff_documents(self) -> None:
+        left = camel.from_dict({"single": {"a": 1, "b": 2}, "parents": {"p": {"x": 1}}})
+        right = camel.from_dict(
+            {"single": {"a": 1, "b": 3, "c": 4}, "parents": {"p": {"x": 1}}}
+        )
+        changes = camel.diff(left, right)
+        self.assertEqual(
+            [(change.kind, change.path) for change in changes],
+            [("changed", "single.b"), ("added", "single.c")],
+        )
+        self.assertEqual(changes[0].to_dict()["old"], 2)
+
+
+class CliTests(unittest.TestCase):
+    def test_get_set_remove_merge_diff(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "config.cml"
+            path.write_text(
+                '@init <Test>\n@single a = 1;\n@parent P {\n    x = 2;\n};\n',
+                encoding="utf-8",
+            )
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                self.assertEqual(cli_main(["get", str(path), "P.x"]), 0)
+            self.assertEqual(output.getvalue().strip(), "2")
+
+            self.assertEqual(cli_main(["set", str(path), "P.y", "3"]), 0)
+            self.assertEqual(camel.load(path).parents["P"]["y"], 3)
+
+            self.assertEqual(cli_main(["set", str(path), "P.z", "4", "--type", "int"]), 0)
+            self.assertEqual(camel.load(path).parents["P"]["z"], 4)
+
+            self.assertEqual(cli_main(["remove", str(path), "P.x"]), 0)
+            self.assertFalse(camel.load(path).has_path("P.x"))
+
+            other = root / "other.cml"
+            other.write_text("@parent Q {\n    z = 9;\n};\n", encoding="utf-8")
+            self.assertEqual(cli_main(["merge", str(path), str(other)]), 0)
+            self.assertEqual(camel.load(path).parents["Q"]["z"], 9)
+
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                self.assertEqual(cli_main(["diff", str(path), str(other), "--json"]), 0)
+            self.assertIn('"path"', output.getvalue())
+
+    def test_validate_fill_defaults(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "config.cml"
+            path.write_text(
+                "@rule Person {\n    $age: %int = 18;\n};\n"
+                "@parent P {\n    @use Person;\n};\n",
+                encoding="utf-8",
+            )
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                self.assertEqual(cli_main(["validate", str(path), "--fill-defaults", "--fix"]), 0)
+            self.assertEqual(camel.load(path).parents["P"]["age"], 18)
 
 
 if __name__ == "__main__":

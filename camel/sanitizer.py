@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any
 
-from .errors import CmlValidationError
-from .nodes import Block, CmlDocument, CmlObject, CmlReference, Entry
+from .errors import CmlPathError, CmlValidationError
+from .nodes import CmlDocument, CmlReference, Entry
 
 TYPE_ALIASES = {
     "bool": "bool",
@@ -279,6 +280,90 @@ def _iter_entries(document: CmlDocument):
             yield f"scope.{name}.{field_name}", entry
 
 
+def _iter_blocks(document: CmlDocument):
+    for name, block in document.parents.items():
+        yield f"parent.{name}", block
+    for name, block in document.scopes.items():
+        yield f"scope.{name}", block
+
+
+def _coerce_rule_field(
+    entry: Entry,
+    path: str,
+    type_name: str,
+    report: SanitizeReport,
+    *,
+    coerce: bool,
+) -> None:
+    if not check_type(entry.value, type_name):
+        if coerce:
+            ok, new_value, message = coerce_value(entry.value, type_name)
+            if ok:
+                entry.value = new_value
+                report.changed = True
+                return
+            report.add_error(
+                path,
+                f"expected %{type_name}, got {type(entry.value).__name__}: {message}",
+            )
+            return
+        report.add_error(
+            path,
+            f"expected %{type_name}, got {type(entry.value).__name__}",
+        )
+
+
+def _apply_rules(
+    document: CmlDocument,
+    report: SanitizeReport,
+    *,
+    coerce: bool,
+    fill_defaults: bool,
+) -> None:
+    for block_path, block in _iter_blocks(document):
+        rule_names: list[str] = []
+        for rule_name in block.uses:
+            if rule_name not in rule_names:
+                rule_names.append(rule_name)
+        if block.name not in rule_names:
+            rule_names.append(block.name)
+        for rule_name in rule_names:
+            rule = document.rules.get(rule_name)
+            if rule is None:
+                if rule_name in block.uses:
+                    report.add_error(
+                        f"{block_path}.use.{rule_name}",
+                        f"unknown rule {rule_name!r}",
+                    )
+                continue
+            for field_name, rule_field in rule.fields.items():
+                path = f"{block_path}.{field_name}"
+                entry = block.entries.get(field_name)
+                if entry is None:
+                    if rule_field.has_default and fill_defaults:
+                        block.entries[field_name] = Entry(
+                            field_name,
+                            deepcopy(rule_field.default),
+                            type=rule_field.type,
+                            has_value=True,
+                        )
+                        report.changed = True
+                        continue
+                    if not rule_field.optional:
+                        report.add_error(path, "rule field is missing")
+                    continue
+                if entry.value is None or isinstance(entry.value, CmlReference):
+                    continue
+                if rule_field.type:
+                    _coerce_rule_field(
+                        entry,
+                        path,
+                        rule_field.type,
+                        report,
+                        coerce=coerce,
+                    )
+
+
 def sanitize(
     document: CmlDocument,
     *,
@@ -287,6 +372,7 @@ def sanitize(
     check_required: bool = True,
     check_aliases: bool = True,
     check_rules: bool = True,
+    fill_defaults: bool = False,
 ) -> SanitizeReport:
     report = SanitizeReport()
     seen: set[str] = set()
@@ -301,6 +387,13 @@ def sanitize(
     if required != document.required:
         document.required = required
         report.changed = True
+    if check_rules:
+        _apply_rules(
+            document,
+            report,
+            coerce=coerce,
+            fill_defaults=fill_defaults,
+        )
     for path, entry in _iter_entries(document):
         _validate_entry(entry, path, report, coerce=coerce)
     if check_required:
@@ -312,7 +405,7 @@ def sanitize(
         for alias in document.aliases:
             try:
                 target = document.resolve_alias(alias)
-            except Exception as exc:
+            except CmlPathError as exc:
                 report.add_error(f"alias.{alias}", str(exc))
                 continue
             if (
@@ -321,25 +414,6 @@ def sanitize(
                 and target not in document.singles
             ):
                 report.add_error(f"alias.{alias}", f"alias target {target!r} does not exist")
-    if check_rules:
-        for rule_name, rule in document.rules.items():
-            block: Block | None = document.parents.get(rule_name) or document.scopes.get(rule_name)
-            if block is None:
-                continue
-            for field_name, rule_field in rule.fields.items():
-                path = f"rule.{rule_name}.{field_name}"
-                entry = block.entries.get(field_name)
-                if entry is None:
-                    if not rule_field.optional:
-                        report.add_error(path, "rule field is missing")
-                    continue
-                if entry.value is None or isinstance(entry.value, CmlReference):
-                    continue
-                if rule_field.type and not check_type(entry.value, rule_field.type):
-                    report.add_error(
-                        path,
-                        f"expected %{rule_field.type}, got {type(entry.value).__name__}",
-                    )
     if strict and report.errors:
         raise CmlValidationError(report)
     return report

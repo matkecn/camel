@@ -4,6 +4,7 @@ from .api import (
     Cml,
     append,
     change,
+    diff,
     dump,
     dumps,
     format_cml,
@@ -18,14 +19,18 @@ from .api import (
     parse_value,
     read,
     remove,
+    resolve_refs,
     sanitize,
     save,
     validate,
     write,
 )
+from .diff import Change
 from .errors import (
     CmlError,
+    CmlIncludeError,
     CmlPathError,
+    CmlReferenceError,
     CmlRequiredError,
     CmlSyntaxError,
     CmlTypeError,
@@ -37,6 +42,7 @@ from .nodes import (
     CmlObject,
     CmlReference,
     Entry,
+    Include,
     Parent,
     Rule,
     RuleField,
@@ -46,24 +52,28 @@ from .sanitizer import Issue, SanitizeReport, check_type, coerce_value, infer_ty
 from .writer import dump as write_file
 from .writer import dumps as format_text
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __author__ = "@matkecn"
 __language__ = "CamelConfig"
 __extension__ = ".cml"
 
 __all__ = [
     "Block",
+    "Change",
     "Cml",
     "CmlDocument",
     "CmlError",
+    "CmlIncludeError",
     "CmlObject",
     "CmlPathError",
     "CmlReference",
+    "CmlReferenceError",
     "CmlRequiredError",
     "CmlSyntaxError",
     "CmlTypeError",
     "CmlValidationError",
     "Entry",
+    "Include",
     "Issue",
     "Parent",
     "Rule",
@@ -74,6 +84,7 @@ __all__ = [
     "change",
     "check_type",
     "coerce_value",
+    "diff",
     "dump",
     "dumps",
     "format_cml",
@@ -91,6 +102,7 @@ __all__ = [
     "parse_value",
     "read",
     "remove",
+    "resolve_refs",
     "sanitize",
     "save",
     "validate",

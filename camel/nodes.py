@@ -30,6 +30,12 @@ class CmlReference:
         return f"${self.name}({args})"
 
 
+@dataclass
+class Include:
+    path: str
+    line: int = 0
+
+
 class CmlObject(dict):
     def __init__(self, *args: Any, types: dict[str, str] | None = None, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -76,11 +82,13 @@ class Block(MutableMapping[str, Any]):
         entries: dict[str, Entry] | None = None,
         *,
         decorators: list[str] | None = None,
+        uses: list[str] | None = None,
         line: int = 0,
     ) -> None:
         self.name = name
         self.entries: dict[str, Entry] = dict(entries or {})
         self.decorators = list(decorators or [])
+        self.uses = list(uses or [])
         self.line = line
 
     def __getitem__(self, key: str) -> Any:
@@ -150,6 +158,7 @@ class Block(MutableMapping[str, Any]):
             self.name,
             {key: Entry(**vars(entry)) for key, entry in self.entries.items()},
             decorators=list(self.decorators),
+            uses=list(self.uses),
             line=self.line,
         )
 
@@ -222,6 +231,7 @@ class CmlDocument(MutableMapping[str, Any]):
         aliases: dict[str, str] | None = None,
         rules: dict[str, Rule] | None = None,
         decorators: list[str] | None = None,
+        includes: list[Include] | None = None,
         filename: str = "<string>",
     ) -> None:
         self.init = init
@@ -232,6 +242,7 @@ class CmlDocument(MutableMapping[str, Any]):
         self.aliases: dict[str, str] = dict(aliases or {})
         self.rules: dict[str, Rule] = dict(rules or {})
         self.decorators = list(decorators or [])
+        self.includes = list(includes or [])
         self.filename = filename
 
     def __getitem__(self, key: str) -> Any:
@@ -307,9 +318,10 @@ class CmlDocument(MutableMapping[str, Any]):
         name: str,
         *,
         decorators: list[str] | None = None,
+        uses: list[str] | None = None,
         line: int = 0,
     ) -> Parent:
-        parent = Parent(name, decorators=decorators, line=line)
+        parent = Parent(name, decorators=decorators, uses=uses, line=line)
         self.parents[name] = parent
         return parent
 
@@ -318,9 +330,10 @@ class CmlDocument(MutableMapping[str, Any]):
         name: str,
         *,
         decorators: list[str] | None = None,
+        uses: list[str] | None = None,
         line: int = 0,
     ) -> Scope:
-        scope = Scope(name, decorators=decorators, line=line)
+        scope = Scope(name, decorators=decorators, uses=uses, line=line)
         self.scopes[name] = scope
         return scope
 
@@ -546,6 +559,56 @@ class CmlDocument(MutableMapping[str, Any]):
         self.set(path, value)
         return value
 
+    def require(self, path: str) -> Any:
+        try:
+            return self.get_path(path)
+        except (KeyError, CmlPathError) as exc:
+            raise CmlPathError(f"missing required path {path!r}") from exc
+
+    def _get_typed(self, path: str, type_name: str, default: Any = _MISSING) -> Any:
+        try:
+            value = self.get_path(path)
+        except (KeyError, CmlPathError) as exc:
+            if default is not _MISSING:
+                return default
+            raise CmlPathError(f"missing path {path!r}") from exc
+        from .sanitizer import check_type
+
+        if not check_type(value, type_name):
+            raise CmlTypeError(f"{path!r} expected %{type_name}, got {type(value).__name__}")
+        return value
+
+    def get_int(self, path: str, default: Any = _MISSING) -> Any:
+        return self._get_typed(path, "int", default)
+
+    def get_float(self, path: str, default: Any = _MISSING) -> Any:
+        return self._get_typed(path, "float", default)
+
+    def get_bool(self, path: str, default: Any = _MISSING) -> Any:
+        return self._get_typed(path, "bool", default)
+
+    def get_str(self, path: str, default: Any = _MISSING) -> Any:
+        return self._get_typed(path, "string", default)
+
+    def get_list(self, path: str, default: Any = _MISSING) -> Any:
+        return self._get_typed(path, "list", default)
+
+    def get_dict(self, path: str, default: Any = _MISSING) -> Any:
+        return self._get_typed(path, "object", default)
+
+    def ensure(self, path: str, default: Any, type_name: str | None = None) -> Any:
+        if self.has_path(path):
+            return self.get_path(path)
+        if type_name is not None:
+            from .sanitizer import check_type
+
+            if not check_type(default, type_name):
+                raise CmlTypeError(
+                    f"default for {path!r} expected %{type_name}, got {type(default).__name__}"
+                )
+        self.set(path, default)
+        return default
+
     def walk(self) -> Iterator[tuple[str, Entry]]:
         for name, entry in self.singles.items():
             yield f"single.{name}", entry
@@ -568,8 +631,11 @@ class CmlDocument(MutableMapping[str, Any]):
         for name, entry in source.entries.items():
             if name not in target.entries or overwrite:
                 target.entries[name] = Entry(**vars(entry))
-        if not target.decorators:
+        if source.decorators and (overwrite or not target.decorators):
             target.decorators = list(source.decorators)
+        for rule_name in source.uses:
+            if rule_name not in target.uses:
+                target.uses.append(rule_name)
 
     def merge(
         self,
@@ -600,6 +666,9 @@ class CmlDocument(MutableMapping[str, Any]):
         for alias, target in other.aliases.items():
             if alias not in self.aliases or overwrite:
                 self.aliases[alias] = target
+        for include in other.includes:
+            if not any(existing.path == include.path for existing in self.includes):
+                self.includes.append(Include(include.path, include.line))
         if merge_required:
             for name in other.required:
                 if name not in self.required:
@@ -650,6 +719,12 @@ class CmlDocument(MutableMapping[str, Any]):
             "aliases": dict(self.aliases),
             "rules": {name: rule.to_dict() for name, rule in self.rules.items()},
             "decorators": list(self.decorators),
+            "includes": [include.path for include in self.includes],
+            "uses": {
+                name: list(block.uses)
+                for name, block in (*self.parents.items(), *self.scopes.items())
+                if block.uses
+            },
         }
 
     @property
@@ -677,5 +752,6 @@ class CmlDocument(MutableMapping[str, Any]):
                 for name, rule in self.rules.items()
             },
             decorators=list(self.decorators),
+            includes=[Include(include.path, include.line) for include in self.includes],
             filename=self.filename,
         )

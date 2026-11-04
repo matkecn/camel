@@ -9,6 +9,7 @@ from .nodes import (
     CmlObject,
     CmlReference,
     Entry,
+    Include,
     Parent,
     Rule,
     RuleField,
@@ -61,6 +62,8 @@ class Parser:
                     self._parse_required(document)
                 elif keyword == "init":
                     self._parse_init(document)
+                elif keyword == "include":
+                    self._parse_include(document)
                 elif keyword == "single":
                     self._parse_single(document, decorators)
                 elif keyword in ("parent", "scope"):
@@ -152,6 +155,11 @@ class Parser:
             return self._advance().value
         self._error("expected an init name")
 
+    def _parse_include(self, document: CmlDocument) -> None:
+        path_token = self._expect("STRING", "expected a quoted path after '@include'")
+        document.includes.append(Include(path_token.value, path_token.line))
+        self._consume_end()
+
     def _parse_required(self, document: CmlDocument) -> None:
         names: list[str] = []
         while not self._check("SEMI") and not self._check("NEWLINE") and not self._check("EOF"):
@@ -186,7 +194,7 @@ class Parser:
     def _parse_block(self, document: CmlDocument, keyword: str, decorators: list[str]) -> None:
         name_token = self._expect("IDENT", f"expected a {keyword} name")
         self._expect("LBRACE", f"expected '{{' after {keyword} name")
-        entries = self._parse_block_body()
+        entries, uses = self._parse_block_body()
         self._expect("RBRACE", f"expected '}}' to close {keyword}")
         self._consume_end()
         if keyword == "parent":
@@ -194,6 +202,7 @@ class Parser:
                 name_token.value,
                 entries,
                 decorators=decorators,
+                uses=uses,
                 line=name_token.line,
             )
         else:
@@ -201,15 +210,28 @@ class Parser:
                 name_token.value,
                 entries,
                 decorators=decorators,
+                uses=uses,
                 line=name_token.line,
             )
 
-    def _parse_block_body(self) -> dict[str, Entry]:
+    def _parse_block_body(self) -> tuple[dict[str, Entry], list[str]]:
         entries: dict[str, Entry] = {}
+        uses: list[str] = []
         while not self._check("RBRACE") and not self._check("EOF"):
             self._skip_separators()
             if self._check("RBRACE") or self._check("EOF"):
                 break
+            if (
+                self._check("AT")
+                and self._peek(1).kind == "IDENT"
+                and self._peek(1).value == "use"
+            ):
+                self._advance()
+                self._advance()
+                rule_token = self._expect("IDENT", "expected a rule name after '@use'")
+                uses.append(rule_token.value)
+                self._consume_end()
+                continue
             self._parse_decorators()
             modifiers: set[str] = set()
             while (
@@ -225,7 +247,7 @@ class Parser:
             entry.optional = entry.optional or "optional" in modifiers
             entries[entry.name] = entry
             self._consume_end()
-        return entries
+        return entries, uses
 
     def _parse_entry(self) -> Entry:
         name_token = self._parse_key()
@@ -275,9 +297,7 @@ class Parser:
                 self._advance()
                 self._advance()
                 optional = True
-            if self._check("REF"):
-                field_token = self._advance()
-            elif self._check("IDENT") or self._check("STRING"):
+            if self._check("REF") or self._check("IDENT") or self._check("STRING"):
                 field_token = self._advance()
             else:
                 self._error("expected a rule field")
@@ -361,9 +381,7 @@ class Parser:
             if self._match("COLON"):
                 if self._check("TYPE"):
                     type_name = self._advance().value
-                    if self._match("EQ"):
-                        value = self._parse_value()
-                    elif not (
+                    if self._match("EQ") or not (
                         self._check("SEMI")
                         or self._check("COMMA")
                         or self._check("NEWLINE")
