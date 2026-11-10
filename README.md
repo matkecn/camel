@@ -2,7 +2,7 @@
   <img src="assets/logo.svg" alt="CamelConfig logo" width="560" />
 </p>
 
-<h1 align="center">CamelConfig</h1>
+<!--<h1 align="center">CamelConfig</h1>-->
 
 <p align="center">
   <strong>CML</strong> — a typed, human-friendly configuration language for Python.
